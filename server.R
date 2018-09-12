@@ -3,6 +3,19 @@ source('helper.R')
 server <- function(input, output, session) {
   school <- reactive({table_2 %>% filter(name == input$school)})
   
+  output$college_level_table <- DT::renderDataTable({
+    school() %>% 
+      select(name, tier_name, state, par_median, k_median, female) %>% 
+      rename_all(funs(stringr::str_to_title)) %>% 
+      rename(Tier = Tier_name,
+             `Parental Median Income` = Par_median,
+             `Kids' Median Income` = K_median,
+             `% Female` = Female) %>% 
+      mutate(`Parental Median Income` = scales::dollar(`Parental Median Income`),
+             `Kids' Median Income` = scales::dollar(`Kids' Median Income`),
+             `% Female` = scales::percent(round(`% Female`, 3)))
+  })
+  
   plot_basic <- function(variable) {
     variable_value <- school() [variable][[1]][1]
     table_2 %>% 

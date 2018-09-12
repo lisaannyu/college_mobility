@@ -6,6 +6,7 @@ side <- dashboardSidebar(
               selected = "Stanford University"),
   sidebarMenu(
     menuItem("Introduction", tabName = "intro"),
+    menuItem("College-level Characteristics", tabName = "college_level"),
     menuItem("Access", tabName = "access"),
     menuItem("Success", tabName = "success"),
     menuItem("Mobility", tabName = "mobility")
@@ -46,7 +47,8 @@ body <- dashboardBody(
         ),
     tabItem(
       tabName = "college_level",
-      h4(strong("College-level Characteristics"))
+      h4(strong("College-level Characteristics")),
+      DT::dataTableOutput("college_level_table")
     ),
     tabItem(
       tabName = "access",

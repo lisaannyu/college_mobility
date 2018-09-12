@@ -10,6 +10,13 @@ table_2_file_path <-
 table_2 <- haven::read_dta(table_2_file_path) %>% 
   arrange(name)
 
+# Table 10: College-level Characteristics
+table_10_file_path <-
+  "http://www.equality-of-opportunity.org/data/college/mrc_table10.dta"
+
+table_10 <- haven::read_dta(table_10_file_path) %>% 
+  arrange(name)
+
 # Colors
 COLOR_TIER <- "#00BFC4"
 COLOR_OTHER_TIERS <- "#F8766D"
