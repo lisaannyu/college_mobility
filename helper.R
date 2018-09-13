@@ -12,10 +12,16 @@ table_2 <- haven::read_dta(table_2_file_path) %>%
 
 # Table 10: College-level Characteristics
 table_10_file_path <-
-  "http://www.equality-of-opportunity.org/data/college/mrc_table10.dta"
+  "mrc_table10.csv"
 
-table_10 <- haven::read_dta(table_10_file_path) %>% 
+table_10 <- read_csv(table_10_file_path) %>% 
   arrange(name)
+
+# Add some college-level characteristics to table_2
+table_2 <- table_2 %>%
+  left_join(table_10 %>% select(name, sat_avg_2013, sticker_price_2013, 
+                                pct_stem_2000), 
+            by = "name")
 
 # Colors
 COLOR_TIER <- "#00BFC4"

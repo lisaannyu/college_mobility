@@ -5,15 +5,22 @@ server <- function(input, output, session) {
   
   output$college_level_table <- DT::renderDataTable({
     school() %>% 
-      select(name, tier_name, state, par_median, k_median, female) %>% 
+      select(name, tier_name, state, par_median, k_median, female, 
+             sat_avg_2013, sticker_price_2013, pct_stem_2000) %>% 
       rename_all(funs(stringr::str_to_title)) %>% 
       rename(Tier = Tier_name,
              `Parental Median Income` = Par_median,
              `Kids' Median Income` = K_median,
-             `% Female` = Female) %>% 
+             `% Female` = Female,
+             `Avg SAT (2013) / 1600` = Sat_avg_2013,
+             `Sticker Price (2013)` = Sticker_price_2013,
+             `% STEM (2000)` = Pct_stem_2000) %>% 
       mutate(`Parental Median Income` = scales::dollar(`Parental Median Income`),
              `Kids' Median Income` = scales::dollar(`Kids' Median Income`),
-             `% Female` = scales::percent(round(`% Female`, 3)))
+             `% Female` = scales::percent(round(`% Female`, 3)),
+             `Avg SAT (2013) / 1600` = round(`Avg SAT (2013) / 1600`, 0),
+             `Sticker Price (2013)` = scales::dollar(`Sticker Price (2013)`),
+             `% STEM (2000)` = scales::percent(round(`% STEM (2000)` / 100, 3)))
   })
   
   plot_basic <- function(variable) {
