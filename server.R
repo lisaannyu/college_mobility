@@ -4,7 +4,8 @@ server <- function(input, output, session) {
   school <- reactive({table_2 %>% filter(name == input$school)})
   
   output$college_level_table <- DT::renderDataTable({
-    school() %>% 
+    # school() %>% 
+    table_2 %>% 
       select(name, tier_name, state, par_median, k_median, female, 
              sat_avg_2013, sticker_price_2013, pct_stem_2000) %>% 
       rename_all(funs(stringr::str_to_title)) %>% 
@@ -20,7 +21,13 @@ server <- function(input, output, session) {
              `% Female` = scales::percent(round(`% Female`, 3)),
              `Avg SAT (2013) / 1600` = round(`Avg SAT (2013) / 1600`, 0),
              `Sticker Price (2013)` = scales::dollar(`Sticker Price (2013)`),
-             `% STEM (2000)` = scales::percent(round(`% STEM (2000)` / 100, 3)))
+             `% STEM (2000)` = scales::percent(round(`% STEM (2000)` / 100, 3))) %>% 
+      DT::datatable(options = list(pageLength = 1)) %>% 
+      DT::formatStyle('Parental Median Income',
+                      backgroundColor = DT::styleInterval(c(64200, 85200),
+                        # quantile(table_2$par_median, c(1 / 3, 2 / 3)),
+                                                          c("red", "yellow", "green")))
+    # Not sure why this isn't working - ideally want 5 levels, not 3
   })
   
   plot_basic <- function(variable) {
