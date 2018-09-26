@@ -223,7 +223,36 @@ tibble(
   beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
 )
 
-# tiername_IVyPlus, asian_or_pacific_share_fall_2000, poor_share, par_top1pc, tierOtherElite,
+# tiername_IvyPlus, asian_or_pacific_share_fall_2000, poor_share, par_top1pc, tierOtherElite,
 #   par_top5pc, cs_born_foreign, par_toppt1pc, inc_share_1perc, cs_elf_ind_man
+```
+
+# Evaluate visually
+## tiername
+```{r}
+table_preds %>%
+  group_by(tier_name) %>% 
+  summarize(percent = mean(mr_ktop1_pq1)) %>% 
+  ggplot(aes(tier_name, percent)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+table_2 %>%
+  group_by(tier_name) %>% 
+  summarize(percent = mean(k_top1pc)) %>% 
+  ggplot(aes(tier_name, percent)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+table_2 %>%
+  group_by(tier_name) %>% 
+  summarize(percent = mean(par_q1)) %>% 
+  ggplot(aes(tier_name, percent)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90))
 ```
 
