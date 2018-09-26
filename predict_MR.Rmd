@@ -1,0 +1,229 @@
+---
+title: "predict_MR"
+author: "Lisa Ann Yu"
+date: "9/22/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+source('helper.R')
+```
+
+# Data Cleaning: table_2 and table_10
+## which vars are in table_2 but not table_10?
+```{r}
+setdiff(colnames(table_10), colnames(table_2))
+colnames(table_2)[!(colnames(table_2) %in% colnames(table_10))]
+
+# want count, female, par_mean, par_median, par_rank, par1-toppt1pc from table_2
+```
+
+## Convert types of some vars
+```{r}
+table_2$super_opeid <- as.integer(table_2$super_opeid)
+```
+
+```{r}
+table_10 <- table_10 %>% 
+  mutate(region = factor(region,
+                         labels = c("Northeast", "Midwest", "South", "West")),
+         type = factor(type,
+                       labels = c("public", "private", "for-profit")),
+         iclevel = factor(iclevel,
+                          labels = c("Four-year", "Two-year", "Less than Two-year")),
+         barrons = factor(barrons,
+                          levels = c(1:5, 9, 999),
+                          labels = c("Elite", "Highly Selective", 
+                                     rep("Selective", 3),
+                                     "Special",
+                                     "Non-selective"),
+                          ordered = TRUE))
+
+# major (i.e. arts/humanities, stem, tradepersonal) percent
+table_10 <- table_10 %>% 
+  mutate_at(vars(matches("pct_[A-Za-z]+_2000")) ,
+            funs(. / 100))
+```
+
+
+# cz-level data
+```{r}
+file_path_cz <- "http://www.equality-of-opportunity.org/data/health/health_ineq_online_table_10.dta"
+cz <- haven::read_dta(file_path_cz)
+cz$cz <- as.integer(cz$cz)
+```
+
+## Change vars
+```{r}
+# These percentages need to be divided by 100
+cz <- cz %>% 
+  mutate_at(vars(cs_frac_black, cs_frac_hisp, cs_born_foreign, cs_educ_ba,
+                 puninsured2010, primcarevis_10, mammogram_10,
+                 rel_tot, pop_d_2000_1980, lf_d_2000_1980),
+            funs(. / 100))
+```
+
+# Create dataset for prediction
+```{r}
+table_preds <- table_10 %>% 
+  left_join(table_2 %>% select(super_opeid, mr_kq5_pq1, mr_ktop1_pq1,
+                               count, female, 
+                               starts_with("par")), 
+            by = "super_opeid") %>% 
+  left_join(cz %>% select(-fips, -czname, -statename, -stateabbrv, 
+                          -matches("smoke"), -matches("obese"), -matches("exercise"),
+                          -matches("diab")), by = "cz") %>% 
+  select(-super_opeid, -name, 
+         -fips, -cz, -czname, -cfips, -county, -state, -zip, -tier,
+         -scorecard_median_earnings_2011)
+```
+
+## Missingness of y-var
+```{r}
+sum(is.na(table_preds$mr_kq5_pq1))
+sum(is.na(table_preds$mr_ktop1_pq1))
+# need to remove these
+```
+
+```{r}
+table_preds <- table_preds %>% 
+  filter(!is.na(mr_kq5_pq1))
+```
+
+# Regression
+## Top 20%
+```{r}
+summary(lm(mr_kq5_pq1 ~ . - mr_ktop1_pq1,
+           data = table_preds))
+# region_South, barrons, hbcu,
+#   ipeds_enrollment_2013, ipeds_enrollment_2000, 
+#   asian_or_pacific_share_fall_2000, black_share_fall_2000, hisp_share_fall_2000
+#   pct_arthuman_2000, pct_business_2000, pct_health_2000, pct_publicsocial_2000,
+#   pct_stem_2000, pct_socialscience_2000, pct_tradepersonal_2000, 
+#   adjmortmeas_chfall30day, cs00_seg_inc_pov25, poor_share, frac_middleclass,
+#   scap_ski90pcm, cs_frac_black, cs_frac_hisp, cs_labforce, pop_density, 
+#   frac_traveltime_lt15, hhinc00, taxrate
+```
+
+```{r}
+summary(lm(mr_ktop1_pq1 ~ . - mr_kq5_pq1,
+           data = table_preds))
+
+# SAT, poor share
+```
+
+# Lasso: probably not necessary since coefficients not huge
+
+
+# Check missingness
+```{r}
+vars_w_missingness <- table_preds %>% 
+  purrr::map_int(~ sum(is.na(.))) %>% 
+  .[. != 0] %>% 
+  names()
+```
+
+
+## Add column to denote missingness
+```{r}
+add_missing_col <- function(df, var) {
+  # Add 1/0 col
+  df[paste0(var, "_NA")] <- if_else(is.na(df[var]), 1, 0)
+  
+  # change NA to -1 in original column
+  missing_indices <- is.na(df[var][[1]])
+  df[missing_indices, var] <- -1
+  
+  return(df)
+}
+```
+
+```{r}
+for (var in vars_w_missingness) {
+  table_preds <- add_missing_col(table_preds, var)
+}
+```
+
+## Check function
+```{r}
+dim(table_preds)
+table_preds %>% 
+  select(ends_with("_NA"))
+```
+
+# Dummy-coded version
+```{r}
+table_preds_binary <- model.matrix(~., data = table_preds %>% select(-mr_kq5_pq1, -mr_ktop1_pq1))
+```
+
+```{r}
+# Normalize all vars
+table_preds_binary %>% 
+  as_tibble() %>% 
+  purrr::map_dbl(~max(.)) %>% 
+  .[. > 1]
+
+table_preds_binary <- table_preds_binary %>% 
+  as_tibble() %>% 
+  mutate_if(function(x) max(x) > 1, funs(percent_rank(.))) %>% 
+  as.matrix()
+```
+
+
+# Elastic net: probably correlated factors
+## Top 20%
+```{r}
+a <- seq(0, 0.9, 0.05)
+search <- foreach(i = a, .combine = rbind) %dopar% {
+  cv <- cv.glmnet(y = table_preds$mr_kq5_pq1,
+          x = table_preds_binary,
+          nfold = 10, type.measure = "deviance", parallel = TRUE, alpha = i)
+  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], lambda.1se = cv$lambda.1se, alpha = i)
+}
+cv3 <- search[search$cvm == min(search$cvm), ]
+md3 <- glmnet(y = table_preds$mr_kq5_pq1,
+              x = table_preds_binary,
+              lambda = cv3$lambda.1se, alpha = cv3$alpha)
+cv3$alpha
+coef(md3)
+
+tibble(
+  name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
+  beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
+)
+
+# Top 10 coefficients
+# taxrate, lf_d_2000_1980, asian_or_pacific_share_fall_2000, par_q1, poor_share,
+#   female_NA, cs_fam_wkids_singlemom, cs_born_foreign, female, hisp_share_fall_2000
+```
+
+## Top 1%
+```{r}
+a <- seq(0, 0.9, 0.05)
+search <- foreach(i = a, .combine = rbind) %dopar% {
+  cv <- cv.glmnet(y = table_preds$mr_ktop1_pq1,
+          x = table_preds_binary,
+          nfold = 10, type.measure = "deviance", parallel = TRUE, alpha = i)
+  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], lambda.1se = cv$lambda.1se, alpha = i)
+}
+cv3 <- search[search$cvm == min(search$cvm), ]
+md3 <- glmnet(y = table_preds$mr_ktop1_pq1,
+              x = table_preds_binary,
+              lambda = cv3$lambda.1se, alpha = cv3$alpha)
+cv3$alpha
+coef(md3)
+
+tibble(
+  name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
+  beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
+)
+
+# tiername_IVyPlus, asian_or_pacific_share_fall_2000, poor_share, par_top1pc, tierOtherElite,
+#   par_top5pc, cs_born_foreign, par_toppt1pc, inc_share_1perc, cs_elf_ind_man
+```
+
