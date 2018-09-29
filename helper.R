@@ -12,7 +12,8 @@ table_2 <- haven::read_dta(table_2_file_path) %>%
 
 # Table 10: College-level Characteristics
 table_10_file_path <-
-  "mrc_table10.csv"
+  "/Users/lisaannyu/GitHub/college_mobility/mrc_table10.csv"
+  # "mrc_table10.csv"
 
 table_10 <- read_csv(table_10_file_path) %>% 
   arrange(name)
