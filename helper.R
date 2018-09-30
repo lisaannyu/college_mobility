@@ -12,8 +12,8 @@ table_2 <- haven::read_dta(table_2_file_path) %>%
 
 # Table 10: College-level Characteristics
 table_10_file_path <-
-  "/Users/lisaannyu/GitHub/college_mobility/mrc_table10.csv"
-  # "mrc_table10.csv"
+  "https://github.com/lisaannyu/college_mobility/raw/master/mrc_table10.csv"
+  # "/Users/lisaannyu/GitHub/college_mobility/mrc_table10.csv"
 
 table_10 <- read_csv(table_10_file_path) %>% 
   arrange(name)
@@ -21,7 +21,8 @@ table_10 <- read_csv(table_10_file_path) %>%
 # Add some college-level characteristics to table_2
 table_2 <- table_2 %>%
   left_join(table_10 %>% select(name, sat_avg_2013, sticker_price_2013, 
-                                pct_stem_2000), 
+                                pct_stem_2000,
+                                ends_with("_share_fall_2000")), 
             by = "name")
 
 # Colors

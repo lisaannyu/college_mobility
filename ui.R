@@ -1,6 +1,6 @@
 source('helper.R')
 
-header <- dashboardHeader(title = "")
+header <- dashboardHeader(title = "College Mobility")
 side <- dashboardSidebar(
   selectInput('school', label = 'School Name', choices = table_2$name,
               selected = "Stanford University"),
@@ -15,18 +15,26 @@ body <- dashboardBody(
   tabItems(
     tabItem(
       tabName = "intro",
-      h4(strong("What effect does college have on mobility?")),
+      h4(strong("What effect does college have on income mobility?")),
       # Link: (http://www.equality-of-opportunity.org/data/index.html#college)
       HTML(paste0(
-        p('Dr. Raj Chetty and his "Equality of Opportunity" research team examined 
-          this question by collecting
+        p('A subset of the "Equality of Opportunity" research team, a 
+          collaboration directed by Raj Chetty of Stanford, John N. Friedman of 
+          Brown, and Nathaniel Hendren of Harvard, examined this question by collecting
           millions of anonymized tax filings and financial-aid records from 
           10.8 million people, the most comprehensive study of college graduates
           to date.  All students in this dataset attended school
           between 1980 and 1991.  Other variables include: parental income 
           quantiles and personal income quantiles at age 30+.')
         )),
-      HTML(paste("This study was described for the layperson by David Leonhardt in the", 
+      HTML(paste("A manuscript of the paper can be found here:",
+                 a('"Mobility Report Cards: The Role of Colleges in Intergenerational Mobility',
+                   href = "http://www.equality-of-opportunity.org/papers/coll_mrc_paper.pdf",
+                   targe = "_blank")),
+           '."'),
+      br(),
+      br(),
+      HTML(paste("Alternatively, this study was described for the layperson by David Leonhardt in the", 
                  tags$em("New York Times ("), 
                  a('"America\'s Great Working Class Colleges"',
                    href = "https://www.nytimes.com/2017/01/18/opinion/sunday/americas-great-working-class-colleges.html",
@@ -38,12 +46,19 @@ body <- dashboardBody(
            ")."),
       br(),
       br(),
+      "I wanted to use this valuable public data source to see if I could create
+      a tool allowing users to evaluate a particular college.  I used statistical
+      analyses to help determine which variables were most important.",
+      br(),
+      br(),
       "There are 3 ways of evaluating a college:",
       tags$ul(
         tags$li("Access: Who attends this college? Is this school accessible to those of lower income?"),
         tags$li("Success: Do graduates from this college have high incomes after graduation?"),
         tags$li("Mobility: How many students from lower parental income backgrounds end up in higher income brackets after graduation?")
-      )
+      ),
+      br(),
+      "Mobility is essentially access x success."
         ),
     tabItem(
       tabName = "college_level",
@@ -65,7 +80,8 @@ body <- dashboardBody(
         title = "",
         id = "quintile",
         tabPanel("Quintile Distribution", plotOutput("quintiles"))
-      )
+      ),
+      "Note: If parental income were unrelated to admission, each school would have 20% of its students from each quintile"
     ),
     tabItem(
       tabName = "success",
@@ -83,37 +99,7 @@ body <- dashboardBody(
         id = "quintile",
         tabPanel("Quintile Distribution", plotOutput("k_quintiles"))
       ),
-      h4("Married in 2014"),
-      tabBox(
-        title = "",
-        id = "married",
-        tabPanel("Overall", plotOutput("married")),
-        tabPanel("Compared to others in its tier", plotOutput("k_married_tier")),
-        tabPanel("Compared to others in its state", plotOutput("k_married_state"))
-      ),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br(),
-      br()
+      "Note: If individual income were unrelated to admission, each school would have 20% of its students from each quintile"
     ),
     tabItem(
       tabName = "mobility",
@@ -121,8 +107,8 @@ body <- dashboardBody(
       tabBox(
         title = "",
         id = "mr",
-        tabPanel("Q1", plotOutput("mr_pq1")),
-        tabPanel("Top 1%", plotOutput("mr_top1"))
+        tabPanel("Top 20%", plotOutput("mr_kq5")),
+        tabPanel("Top 1%", plotOutput("mr_ktop1"))
       )
     )
     )

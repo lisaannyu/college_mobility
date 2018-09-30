@@ -14,6 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 source('helper.R')
 ```
 
+# Libraries
+```{r}
+library(glmnet)
+```
+
 # Data Cleaning: table_2 and table_10
 ## which vars are in table_2 but not table_10?
 ```{r}
@@ -80,8 +85,10 @@ table_preds <- table_10 %>%
                           -matches("diab")), by = "cz") %>% 
   select(-super_opeid, -name, 
          -fips, -cz, -czname, -cfips, -county, -state, -zip, -tier,
+         -starts_with("par"),
          -scorecard_median_earnings_2011)
 ```
+
 
 ## Missingness of y-var
 ```{r}
@@ -117,7 +124,7 @@ summary(lm(mr_ktop1_pq1 ~ . - mr_kq5_pq1,
 # SAT, poor share
 ```
 
-# Lasso: probably not necessary since coefficients not huge
+Lasso: probably not necessary since coefficients not huge
 
 
 # Check missingness
@@ -195,10 +202,11 @@ coef(md3)
 tibble(
   name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
   beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
-)
+) %>% 
+  slice(1:15)
 
 # Top 10 coefficients
-# taxrate, lf_d_2000_1980, asian_or_pacific_share_fall_2000, par_q1, poor_share,
+# taxrate, lf_d_2000_1980, asian_or_pacific_share_fall_2000, poor_share,
 #   female_NA, cs_fam_wkids_singlemom, cs_born_foreign, female, hisp_share_fall_2000
 ```
 
