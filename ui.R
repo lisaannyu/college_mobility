@@ -85,7 +85,7 @@ body <- dashboardBody(
     ),
     tabItem(
       tabName = "success",
-      h4(strong("Success: how do students fare after college?")),
+      h4(strong("Success: how do students fare (in terms of income) after college?")),
       h4("Individual Income at Age 34"),
       tabBox(
         title = "",
@@ -104,11 +104,30 @@ body <- dashboardBody(
     tabItem(
       tabName = "mobility",
       h4(strong("Mobility: Does this school help move students up financially?")),
+      HTML(paste0("A ", em("mobility rate"), 
+                  " at the ", em("x"),
+                  "% level is defined as the percent of all students whose parental income is in the bottom 20% AND whose personal income at age 34 is in the top ",
+                  em("x"), "%.")),
+      br(),
+      br(),
+      "There are two levels of mobility rates (MR) in this dataset:",
+      tags$ul(
+        tags$li("mobility rate at the 20% level (denoted MR 20%): the percent of all students for a given college whose parental income is in the bottom 20% and whose personal income is in the top 20%"),
+        tags$li("mobility rate at the 1% level (denoted MR 1%): the percent of all students for a given college whose parental income is in the bottom 20% and whose personal income is in the top 1%")
+      ),
       tabBox(
-        title = "",
-        id = "mr",
-        tabPanel("Top 20%", plotOutput("mr_kq5")),
-        tabPanel("Top 1%", plotOutput("mr_ktop1"))
+        title = "MR 20%",
+        id = "mr_20%",
+        tabPanel("Overall", plotOutput("mr_kq5")),
+        tabPanel("Compared to others in its tier", plotOutput("mr_kq5_tier")),
+        tabPanel("Compared to others in its state", plotOutput("mr_kq5_state"))
+      ),
+      tabBox(
+        title = "MR 1%",
+        id = "mr_1%",
+        tabPanel("Overall", plotOutput("mr_ktop1")),
+        tabPanel("Compared to others in its tier", plotOutput("mr_ktop1_tier")),
+        tabPanel("Compared to others in its state", plotOutput("mr_ktop1_state"))
       )
     )
     )

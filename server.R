@@ -130,7 +130,7 @@ server <- function(input, output, session) {
     k_med_school <- school() %>% .$k_median
     plot_basic("k_median") +
       labs(x = "Median Indiv Income at age 34 for all Schools",
-           title = paste0("Median Individual Income at age 34 for a student from ", 
+           title = paste0("Median Indiv Income at age 34 for a student from ", 
                           input$school, " is ", scales::dollar(k_med_school)),
            subtitle = paste0("Average Income Percentile: ", 
                              round(100 * school() %>% .$k_rank, 1))) +
@@ -190,9 +190,9 @@ server <- function(input, output, session) {
     mr_kq5 <- school()$mr_kq5_pq1
     
     plot_basic("mr_kq5_pq1") +
-      labs(x = "Kids whose parents' incomes are in the bottom 20% and have personal incomes in the top 20%",
-           subtitle = paste0(scales::percent(mr_kq5), " students from ", 
-                          input$school, " are from the bottom 20% and have risen to the top 20%")) +
+      labs(x = "Mobility Rate at the 20% Level for all Schools",
+           title = paste0(input$school, "'s MR 20%: ",
+                          scales::percent(mr_kq5))) +
       scale_x_continuous(labels = scales::percent)
   })
   
@@ -200,9 +200,77 @@ server <- function(input, output, session) {
     mr_ktop1 <- school()$mr_ktop1_pq1
     
     plot_basic("mr_ktop1_pq1") +
-      labs(x = "Kids whose parents' incomes are in the bottom 20% and have personal incomes in the top 1%",
-           subtitle = paste0(scales::percent(mr_ktop1), " students from ", 
-                             input$school, " are from the bottom 20% and have risen to the top 1%")) +
+      labs(x = "Mobility Rate at the 1% Level for all Schools",
+           title = paste0(input$school, "'s MR 1%: ",
+                             scales::percent(mr_ktop1))) +
+      scale_x_continuous(labels = scales::percent)
+  })
+  
+  output$mr_kq5_tier <- renderPlot({
+    tier_name_school <- school()$tier_name
+    kq5_school <- school()$mr_kq5_pq1
+    
+    table_2 %>% 
+      ggplot(mapping = aes(x = mr_kq5_pq1, y = ..density.., fill = tier_name == tier_name_school)) +
+      geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
+      geom_vline(xintercept = kq5_school, color = "red") +
+      labs(x = "Mobility Rate at the 20% Level for all Schools", 
+           y = "Density",
+           title = paste0("MR 20% Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
+      guides(fill = guide_legend("", reverse = TRUE)) +
+      scale_fill_manual(labels = c("All Other Tiers", tier_name_school), 
+                        values = c(COLOR_OTHER_TIERS, COLOR_TIER)) +
+      scale_x_continuous(labels = scales::percent)
+  })
+  
+  output$mr_ktop1_tier <- renderPlot({
+    tier_name_school <- school()$tier_name
+    ktop1_school <- school()$mr_ktop1_pq1
+    
+    table_2 %>% 
+      ggplot(mapping = aes(x = mr_ktop1_pq1, y = ..density.., fill = tier_name == tier_name_school)) +
+      geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
+      geom_vline(xintercept = ktop1_school, color = "red") +
+      labs(x = "Mobility Rate at the 1% Level for all Schools", 
+           y = "Density",
+           title = paste0("MR 1% Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
+      guides(fill = guide_legend("", reverse = TRUE)) +
+      scale_fill_manual(labels = c("All Other Tiers", tier_name_school), 
+                        values = c(COLOR_OTHER_TIERS, COLOR_TIER)) +
+      scale_x_continuous(labels = scales::percent)
+  })  
+  
+  output$mr_kq5_state <- renderPlot({
+    state_school <- school()$state
+    kq5_school <- school()$mr_kq5_pq1
+    
+    table_2 %>% 
+      ggplot(mapping = aes(x = mr_kq5_pq1, y = ..density.., fill = state == state_school)) +
+      geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
+      geom_vline(xintercept = kq5_school, color = "red") +
+      labs(x = "Mobility Rate at the 20% Level for all Schools", 
+           y = "Density",
+           title = paste0("MR 20% Distribution: ", state_school, " Schools vs. All Other States")) +
+      guides(fill = guide_legend("", reverse = TRUE)) +
+      scale_fill_manual(labels = c("All Other States", state_school), 
+                        values = c(COLOR_OTHER_STATES, COLOR_STATE)) +
+      scale_x_continuous(labels = scales::percent)
+  })
+  
+  output$mr_ktop1_state <- renderPlot({
+    state_school <- school()$state
+    ktop1_school <- school()$mr_ktop1_pq1
+    
+    table_2 %>% 
+      ggplot(mapping = aes(x = mr_ktop1_pq1, y = ..density.., fill = state == state_school)) +
+      geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
+      geom_vline(xintercept = ktop1_school, color = "red") +
+      labs(x = "Mobility Rate at the 1% Level for all Schools", 
+           y = "Density",
+           title = paste0("MR 1% Distribution: ", state_school, " Schools vs. All Other States")) +
+      guides(fill = guide_legend("", reverse = TRUE)) +
+      scale_fill_manual(labels = c("All Other States", state_school), 
+                        values = c(COLOR_OTHER_STATES, COLOR_STATE)) +
       scale_x_continuous(labels = scales::percent)
   })
   
