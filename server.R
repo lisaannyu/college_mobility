@@ -10,7 +10,7 @@ server <- function(input, output, session) {
              ends_with("_share_fall_2000")) %>% 
       rename_all(funs(stringr::str_to_title)) %>% 
       rename(Tier = Tier_name,
-             `Parental Median Income` = Par_median,
+             `Median Parental Income` = Par_median,
              `Kids' Median Income` = K_median,
              `% Female` = Female,
              `Avg SAT (2013) / 1600` = Sat_avg_2013,
@@ -21,7 +21,7 @@ server <- function(input, output, session) {
              `% Hisp (2000)` = Hisp_share_fall_2000,
              `% Alien (2000)` = Alien_share_fall_2000
       ) %>% 
-      mutate(`Parental Median Income` = scales::dollar(`Parental Median Income`),
+      mutate(`Median Parental Income` = scales::dollar(`Median Parental Income`),
              `Kids' Median Income` = scales::dollar(`Kids' Median Income`),
              # `% Female` = scales::percent(round(`% Female`, 3)),
              `Avg SAT (2013) / 1600` = round(`Avg SAT (2013) / 1600`, 0),
@@ -37,24 +37,61 @@ server <- function(input, output, session) {
     #          sat_avg_2013, sticker_price_2013, pct_stem_2000) %>% 
     #   rename_all(funs(stringr::str_to_title)) %>% 
     #   rename(Tier = Tier_name,
-    #          `Parental Median Income` = Par_median,
+    #          `Median Parental Income` = Par_median,
     #          `Kids' Median Income` = K_median,
     #          `% Female` = Female,
     #          `Avg SAT (2013) / 1600` = Sat_avg_2013,
     #          `Sticker Price (2013)` = Sticker_price_2013,
     #          `% STEM (2000)` = Pct_stem_2000) %>% 
-    #   mutate(`Parental Median Income` = scales::dollar(`Parental Median Income`),
+    #   mutate(`Median Parental Income` = scales::dollar(`Median Parental Income`),
     #          `Kids' Median Income` = scales::dollar(`Kids' Median Income`),
     #          `% Female` = scales::percent(round(`% Female`, 3)),
     #          `Avg SAT (2013) / 1600` = round(`Avg SAT (2013) / 1600`, 0),
     #          `Sticker Price (2013)` = scales::dollar(`Sticker Price (2013)`),
     #          `% STEM (2000)` = scales::percent(round(`% STEM (2000)` / 100, 3))) %>% 
     #   DT::datatable(options = list(pageLength = 1)) %>% 
-    #   DT::formatStyle('Parental Median Income',
+    #   DT::formatStyle('Median Parental Income',
     #                   backgroundColor = DT::styleInterval(c(64200, 85200),
     #                     # quantile(table_2$par_median, c(1 / 3, 2 / 3)),
     #                                                       c("red", "yellow", "green")))
     # Not sure why this isn't working - ideally want 5 levels, not 3
+  })
+  
+  output$major_share <- renderPlot({
+    school() %>% 
+      select(matches("pct_[A-Za-z]+_2000")) %>% 
+      gather(key = "major", value = "percent") %>% 
+      mutate(major = factor(major,
+                            levels = c("pct_arthuman_2000",
+                                       "pct_business_2000",
+                                       "pct_health_2000",
+                                       "pct_multidisci_2000",
+                                       "pct_publicsocial_2000",
+                                       "pct_stem_2000",
+                                       "pct_socialscience_2000",
+                                       "pct_tradepersonal_2000"
+                            ), 
+                            labels = c("Arts & Humanities",
+                                       "Business",
+                                       "Health & Medicine",
+                                       "Multi/Interdisciplinary Studies",
+                                       "Public and Social Services",
+                                       "STEM",
+                                       "Social Science",
+                                       "Trades & Personal Services"))) %>%
+      mutate(percent = percent / 100# ,
+             # major = reorder(major, desc(percent))
+      ) %>% 
+      ggplot(aes(major, percent)) +
+      geom_col() +
+      geom_text(aes(label = scales::percent(round(percent, 2))),
+                vjust = -0.5) +
+      scale_y_continuous(labels = scales::percent) +
+      theme(axis.text.x = element_text(angle = 90),
+            text = element_text(size = 15)) +
+      labs(x = "Major (2000)",
+           y = "Percent",
+           title = "Share in Each Major in 2000")
   })
   
   plot_basic <- function(variable) {
@@ -69,8 +106,8 @@ server <- function(input, output, session) {
   
   output$median <- renderPlot({
     plot_basic("par_median") +
-      labs(x = "Median Parental Income for all Schools",
-           title = paste0("Median Parental Income for a student from ",
+      labs(x = "Median Parental Income for All Schools",
+           title = paste0("Median Parental Income for ",
                           input$school, " is ", scales::dollar(school() %>% .$par_median)),
            subtitle = paste0("Average Income Percentile: ",
                              round(100 * school() %>% .$par_rank, 1))) +
@@ -101,7 +138,7 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = par_median, y = ..density.., fill = tier_name == tier_name_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = par_med_school, color = "red") +
-      labs(x = "Parental Median Income", 
+      labs(x = "Median Parental Income", 
            y = "Density",
            title = paste0("Parental Income Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
@@ -117,7 +154,7 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = par_median, y = ..density.., fill = state == state_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = par_med_school, color = "red") +
-      labs(x = "Parental Median Income", 
+      labs(x = "Median Parental Income", 
            y = "Density",
            title = paste0("Parental Income Distribution: ", state_school, " Schools vs. All Other States")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
@@ -129,8 +166,8 @@ server <- function(input, output, session) {
   output$k_median <- renderPlot({
     k_med_school <- school() %>% .$k_median
     plot_basic("k_median") +
-      labs(x = "Median Indiv Income at age 34 for all Schools",
-           title = paste0("Median Indiv Income at age 34 for a student from ", 
+      labs(x = "Median Individual Income at Age 34 for All Schools",
+           title = paste0("Median Indiv Income at Age 34 for a student from ", 
                           input$school, " is ", scales::dollar(k_med_school)),
            subtitle = paste0("Average Income Percentile: ", 
                              round(100 * school() %>% .$k_rank, 1))) +
@@ -144,9 +181,9 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = k_median, y = ..density.., fill = tier_name == tier_name_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = k_med_school, color = "red") +
-      labs(x = "Median Individual Income at age 34 for all Schools", 
+      labs(x = "Median Individual Income at Age 34 for All Schools", 
            y = "Density",
-           title = paste0("Individual Income at age 34 Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
+           title = paste0("Individual Income at Age 34 Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
       scale_fill_manual(labels = c("All Other Tiers", tier_name_school), 
                         values = c(COLOR_OTHER_TIERS, COLOR_TIER)) +
@@ -160,9 +197,9 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = k_median, y = ..density.., fill = state == state_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = k_med_school, color = "red") +
-      labs(x = "Median Individual Income at age 34 for all Schools", 
+      labs(x = "Median Individual Income at Age 34 for All Schools", 
            y = "Density",
-           title = paste0("Individual Income at age 34 Distribution: ", state_school, " Schools vs. All Other States")) +
+           title = paste0("Individual Income at Age 34 Distribution: ", state_school, " Schools vs. All Other States")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
       scale_fill_manual(labels = c("All Other States", state_school), 
                         values = c(COLOR_OTHER_STATES, COLOR_STATE)) +
@@ -190,8 +227,8 @@ server <- function(input, output, session) {
     mr_kq5 <- school()$mr_kq5_pq1
     
     plot_basic("mr_kq5_pq1") +
-      labs(x = "Mobility Rate at the 20% Level for all Schools",
-           title = paste0(input$school, "'s MR 20%: ",
+      labs(x = "Mobility Rate at the 20% Level for All Schools",
+           title = paste0("MR 20% for ", input$school, ": ",
                           scales::percent(mr_kq5))) +
       scale_x_continuous(labels = scales::percent)
   })
@@ -200,8 +237,8 @@ server <- function(input, output, session) {
     mr_ktop1 <- school()$mr_ktop1_pq1
     
     plot_basic("mr_ktop1_pq1") +
-      labs(x = "Mobility Rate at the 1% Level for all Schools",
-           title = paste0(input$school, "'s MR 1%: ",
+      labs(x = "Mobility Rate at the 1% Level for All Schools",
+           title = paste0("MR 1% for ", input$school, ": ",
                              scales::percent(mr_ktop1))) +
       scale_x_continuous(labels = scales::percent)
   })
@@ -214,7 +251,7 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = mr_kq5_pq1, y = ..density.., fill = tier_name == tier_name_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = kq5_school, color = "red") +
-      labs(x = "Mobility Rate at the 20% Level for all Schools", 
+      labs(x = "Mobility Rate at the 20% Level for All Schools", 
            y = "Density",
            title = paste0("MR 20% Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
@@ -231,7 +268,7 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = mr_ktop1_pq1, y = ..density.., fill = tier_name == tier_name_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = ktop1_school, color = "red") +
-      labs(x = "Mobility Rate at the 1% Level for all Schools", 
+      labs(x = "Mobility Rate at the 1% Level for All Schools", 
            y = "Density",
            title = paste0("MR 1% Distribution: ", tier_name_school, " Schools vs. All Other Tiers")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
@@ -248,7 +285,7 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = mr_kq5_pq1, y = ..density.., fill = state == state_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = kq5_school, color = "red") +
-      labs(x = "Mobility Rate at the 20% Level for all Schools", 
+      labs(x = "Mobility Rate at the 20% Level for All Schools", 
            y = "Density",
            title = paste0("MR 20% Distribution: ", state_school, " Schools vs. All Other States")) +
       guides(fill = guide_legend("", reverse = TRUE)) +
@@ -265,7 +302,7 @@ server <- function(input, output, session) {
       ggplot(mapping = aes(x = mr_ktop1_pq1, y = ..density.., fill = state == state_school)) +
       geom_histogram(position = "identity", bins = 20, alpha = 0.5) +
       geom_vline(xintercept = ktop1_school, color = "red") +
-      labs(x = "Mobility Rate at the 1% Level for all Schools", 
+      labs(x = "Mobility Rate at the 1% Level for All Schools", 
            y = "Density",
            title = paste0("MR 1% Distribution: ", state_school, " Schools vs. All Other States")) +
       guides(fill = guide_legend("", reverse = TRUE)) +

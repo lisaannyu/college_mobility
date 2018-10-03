@@ -21,7 +21,7 @@ table_10 <- read_csv(table_10_file_path) %>%
 # Add some college-level characteristics to table_2
 table_2 <- table_2 %>%
   left_join(table_10 %>% select(name, sat_avg_2013, sticker_price_2013, 
-                                pct_stem_2000,
+                                matches("pct_[A-Za-z]*_2000"),
                                 ends_with("_share_fall_2000")), 
             by = "name")
 

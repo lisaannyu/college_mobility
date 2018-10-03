@@ -20,7 +20,7 @@ library(glmnet)
 ```
 
 # Data Cleaning: table_2 and table_10
-## which vars are in table_2 but not table_10?
+## differences in p: which vars are in table_2 but not table_10?
 ```{r}
 setdiff(colnames(table_10), colnames(table_2))
 colnames(table_2)[!(colnames(table_2) %in% colnames(table_10))]
@@ -55,24 +55,7 @@ table_10 <- table_10 %>%
             funs(. / 100))
 ```
 
-
-# cz-level data
-```{r}
-file_path_cz <- "http://www.equality-of-opportunity.org/data/health/health_ineq_online_table_10.dta"
-cz <- haven::read_dta(file_path_cz)
-cz$cz <- as.integer(cz$cz)
-```
-
-## Change vars
-```{r}
-# These percentages need to be divided by 100
-cz <- cz %>% 
-  mutate_at(vars(cs_frac_black, cs_frac_hisp, cs_born_foreign, cs_educ_ba,
-                 puninsured2010, primcarevis_10, mammogram_10,
-                 rel_tot, pop_d_2000_1980, lf_d_2000_1980),
-            funs(. / 100))
-```
-
+check differences in n
 # Create dataset for prediction
 ```{r}
 table_preds <- table_10 %>% 
@@ -80,9 +63,6 @@ table_preds <- table_10 %>%
                                count, female, 
                                starts_with("par")), 
             by = "super_opeid") %>% 
-  left_join(cz %>% select(-fips, -czname, -statename, -stateabbrv, 
-                          -matches("smoke"), -matches("obese"), -matches("exercise"),
-                          -matches("diab")), by = "cz") %>% 
   select(-super_opeid, -name, 
          -fips, -cz, -czname, -cfips, -county, -state, -zip, -tier,
          -starts_with("par"),
@@ -92,9 +72,23 @@ table_preds <- table_10 %>%
 
 ## Missingness of y-var
 ```{r}
-sum(is.na(table_preds$mr_kq5_pq1))
+mean(is.na(table_preds$mr_kq5_pq1))
 sum(is.na(table_preds$mr_ktop1_pq1))
 # need to remove these
+```
+
+```{r}
+dim(table_preds)
+dim(table_2)
+dim(table_10)
+
+table_2 %>%
+  filter(is.na(mr_kq5_pq1)) %>% 
+  # filter(tier_name == "Other elite schools (public and private)")
+  count(tier_name)
+
+table_2 %>% 
+  filter(!is.na(mr_ktop1_pq1))
 ```
 
 ```{r}
@@ -161,6 +155,62 @@ for (var in vars_w_missingness) {
 dim(table_preds)
 table_preds %>% 
   select(ends_with("_NA"))
+```
+
+## Are these variables missing completely at random? 
+```{r}
+table_preds_NA <- table_preds
+table_preds_NA[table_preds_NA == -1] <- NA
+```
+
+### t-test
+```{r}
+t.test(table_preds_NA %>% filter(ipeds_enrollment_2000_NA == 1) %>% .$asian_or_pacific_share_fall_2000,
+       table_preds_NA %>% filter(ipeds_enrollment_2000_NA == 0) %>% .$asian_or_pacific_share_fall_2000)
+
+sum(is.na(table_preds_NA %>% filter(ipeds_enrollment_2000_NA == 1) %>% .$asian_or_pacific_share_fall_2000))
+```
+
+```{r}
+t.test(table_preds_NA %>% filter(sat_avg_2013_NA == 1) %>% .$exp_instr_pc_2000,
+       table_preds_NA %>% filter(sat_avg_2013_NA == 0) %>% .$exp_instr_pc_2000)
+
+sum(!is.na(table_preds_NA %>% filter(sat_avg_2013_NA == 1) %>% .$exp_instr_pc_2000))
+```
+
+```{r}
+table_preds_NA %>% select(one_of(vars_w_missingness)) %>% 
+  purrr::map_int(~ sum(is.na(.)))
+```
+
+### chi-square test
+```{r}
+chisq.test(table_preds_NA$sat_avg_2013_NA,
+           table_preds_NA$tier_name)
+
+table_preds_NA %>% 
+  group_by(tier_name) %>% 
+  summarize(sat_avg_2013_NA = mean(sat_avg_2013_NA),
+            n = n()) %>% 
+  arrange(desc(sat_avg_2013_NA))
+```
+
+```{r}
+missing_chisq <- tibble()
+for (var in vars_w_missingness) {
+  missing_chisq <- bind_rows(
+    missing_chisq,
+    tibble(
+      variable = var,
+      p = chisq.test(table_preds_NA[var] %>% .[[1]],
+                     table_preds_NA$tier_name)$`p.value`
+      ))
+}
+
+missing_chisq %>% 
+  arrange(p)
+
+# SAT, Sticker Price, Avg Fac Salary
 ```
 
 # Dummy-coded version
@@ -236,13 +286,15 @@ tibble(
 ```
 
 # Evaluate visually
-## tiername
+## Tier
+### MR 20%
 ```{r}
 table_2 %>%
   group_by(tier_name) %>% 
   summarize(percent_par_q1 = mean(par_q1),
-            percent_kq5_pq1 = mean(mr_kq5_pq1)) %>% 
-  mutate(percent_kNOTq5_pq1 = percent_par_q1 - percent_kq5_pq1) %>% 
+            `% Parental bttm 20%, Kids top 20%` = mean(mr_kq5_pq1)) %>% 
+  mutate(`% Parental bttm 20%, Kids bttm 80%` = percent_par_q1 - 
+           `% Parental bttm 20%, Kids top 20%`) %>% 
   select(-percent_par_q1) %>% 
   mutate(tier_name = factor(tier_name,
                             levels = c("Ivy Plus", 
@@ -259,22 +311,29 @@ table_2 %>%
                                        "Less than two-year schools of any type",
                                        "Not in college between the ages of 19-22",
                                        "Attending college with insufficient data"))) %>% 
-  gather(key = "metric", value = "percent", starts_with("percent")) %>% 
+  gather(key = "metric", value = "percent", starts_with("%")) %>% 
   ggplot(aes(tier_name, percent, fill = metric)) +
   geom_col() +
-  theme(axis.text.x = element_text(angle = 90)) +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
   labs(x = "Tier",
-       y = "Percent with Parental Income in bottom 20%") +
+       y = "% Parental Income in bottom 20%",
+       fill = NULL,
+       title = "A visual representation of MR 20% by Tier") +
   scale_y_continuous(labels = scales::percent)
+
+# ggsave("/Users/lisaannyu/GitHub/college_mobility/www/mr_20.png",
+#        width = 16, height = 9)
 ```
 
-## tiername
+### MR 1%
 ```{r}
 table_2 %>%
   group_by(tier_name) %>% 
   summarize(percent_par_q1 = mean(par_q1),
-            percent_ktop1_pq1 = mean(mr_ktop1_pq1)) %>% 
-  mutate(percent_kNOTtop1_pq1 = percent_par_q1 - percent_ktop1_pq1) %>% 
+            `% Parental bttm 20%, Kids top 1%` = mean(mr_ktop1_pq1)) %>% 
+  mutate(`% Parental bttm 20%, Kids bttm 99%` = percent_par_q1 - 
+           `% Parental bttm 20%, Kids top 1%`) %>% 
   select(-percent_par_q1) %>% 
   mutate(tier_name = factor(tier_name,
                             levels = c("Ivy Plus", 
@@ -291,12 +350,62 @@ table_2 %>%
                                        "Less than two-year schools of any type",
                                        "Not in college between the ages of 19-22",
                                        "Attending college with insufficient data"))) %>% 
-  gather(key = "metric", value = "percent", starts_with("percent")) %>% 
+  gather(key = "metric", value = "percent", starts_with("%")) %>% 
   ggplot(aes(tier_name, percent, fill = metric)) +
   geom_col() +
-  theme(axis.text.x = element_text(angle = 90)) +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
   labs(x = "Tier",
-       y = "Percent with Parental Income in bottom 20%") +
+       y = "% Parental Income in bottom 20%",
+       fill = NULL,
+       title = "A visual representation of MR 1% by Tier") +
   scale_y_continuous(labels = scales::percent)
+
+# ggsave("/Users/lisaannyu/GitHub/college_mobility/www/mr_1.png",
+#        width = 16, height = 9)
 ```
-Next Steps: create a visualization that gives an idea of the scale of these MR numbers: ktop1, pq1
+
+## Share by major
+Need to add more majors
+```{r}
+table_10 %>%
+  filter(name == "Stanford University") %>% 
+  select(matches("pct_[A-Za-z]+_2000")) %>% 
+  gather(key = "major", value = "percent") %>% 
+  mutate(major = factor(major,
+                        levels = c("pct_arthuman_2000",
+                                   "pct_business_2000",
+                                   "pct_health_2000",
+                                   "pct_multidisci_2000",
+                                   "pct_publicsocial_2000",
+                                   "pct_stem_2000",
+                                   "pct_socialscience_2000",
+                                   "pct_tradepersonal_2000"
+                                   ), 
+                       labels = c("Arts & Humanities",
+                                  "Business",
+                                  "Health & Medicine",
+                                  "Multi/Interdisciplinary Studies",
+                                  "Public and Social Services",
+                                  "STEM",
+                                  "Social Science",
+                                  "Trades & Personal Services"))) %>%
+  mutate(percent = percent / 100# ,
+         # major = reorder(major, desc(percent))
+         ) %>% 
+  ggplot(aes(major, percent)) +
+  geom_col() +
+  geom_text(aes(label = scales::percent(round(percent, 2))),
+            vjust = -0.5) +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
+  labs(x = "Major (2000)",
+       y = "Percent",
+       title = "Share in Each Major in 2000")
+```
+
+```{r}
+table_10$pct_arthuman_2000
+```
+

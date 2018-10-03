@@ -5,6 +5,6 @@ account: lisaannyu
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 479662
-bundleId: 1613392
+bundleId: 1619545
 url: https://lisaannyu.shinyapps.io/college_mobility/
-when: 1538257144.3934
+when: 1538540945.14849
