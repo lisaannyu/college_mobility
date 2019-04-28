@@ -2,40 +2,76 @@
 title: "predict_MR"
 author: "Lisa Ann Yu"
 date: "9/22/2018"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Goal: Statistical inference on MR (mobility rate).  What factors are most important?
 
-```{r}
+Context: One purpose of college is to provide better economic opportunities to students from lower income backgrounds than they would have otherwise.  This dataset comes from the Opportunity Insights research group (opportunityinsights.org), led by Raj Chetty, John Friedman, and Nathaniel Hendren. They examine two metrics of each college's mobility rate: 
+
+* MR Top 20%: What percent of students come from the bottom 20% of the income distribution but end up in the top 20% of the income distribution at age 34?
+
+* MR Top 1%: What percent of students come from the bottom 20% of the income distribution but end up in the top 1% of the income distribution at age 34?
+
+# Setup
+## Data
+```{r, message = FALSE}
 source('helper.R')
 ```
 
-# Libraries
-```{r}
+## Additional Libraries
+```{r, message = FALSE}
 library(glmnet)
+library(randomForest)
 ```
 
 # Data Cleaning: table_2 and table_10
-## differences in p: which vars are in table_2 but not table_10?
-```{r}
-setdiff(colnames(table_10), colnames(table_2))
-colnames(table_2)[!(colnames(table_2) %in% colnames(table_10))]
 
-# want count, female, par_mean, par_median, par_rank, par1-toppt1pc from table_2
+Plan:
+
+* I will start by converting variables into the correct types.
+
+* Then I will look at how the two tables are related.
+    * Differences in p: `table_2` and `table_10` each have variables I want to include in my model.  
+    * Differences in n: Some schools are missing from one table.
+
+## Convert var types
+
+### Table 2
+
+```{r}
+# Convert super_opeid to integer
+# Convert tier_name to factor vars
+table_2 <- table_2 %>%
+  mutate(super_opeid = as.integer(super_opeid),
+         tier_name = factor(tier_name,
+                            levels = c("Ivy Plus", 
+                                       "Other elite schools (public and private)",
+                                       "Highly selective private",
+                                       "Highly selective public",
+                                       "Selective private",
+                                       "Selective public",
+                                       "Nonselective four-year private",
+                                       "Nonselective four-year public",
+                                       "Four-year for-profit",
+                                       "Two-year (public and private)",
+                                       "Two-year for-profit",
+                                       "Less than two-year schools of any type",
+                                       "Not in college between the ages of 19-22",
+                                       "Attending college with insufficient data")))
 ```
 
-## Convert types of some vars
+### Table 10
 ```{r}
-table_2$super_opeid <- as.integer(table_2$super_opeid)
-```
-
-```{r}
+# Convert super_opeid to integer
+# Convert region, type, iclevel, barrons, and tier_name to factor vars
 table_10 <- table_10 %>% 
-  mutate(region = factor(region,
+  mutate(super_opeid = as.integer(super_opeid),
+         region = factor(region,
                          labels = c("Northeast", "Midwest", "South", "West")),
          type = factor(type,
                        labels = c("public", "private", "for-profit")),
@@ -47,81 +83,85 @@ table_10 <- table_10 %>%
                                      rep("Selective", 3),
                                      "Special",
                                      "Non-selective"),
-                          ordered = TRUE))
+                          ordered = TRUE),
+         # not exactly ordered, so I will keep this as an unordered factor
+         tier_name = factor(tier_name,
+                            levels = c("Ivy Plus", 
+                                       "Other elite schools (public and private)",
+                                       "Highly selective private",
+                                       "Highly selective public",
+                                       "Selective private",
+                                       "Selective public",
+                                       "Nonselective four-year private not-for-profit",
+                                       "Nonselective four-year public",
+                                       "Four-year for-profit",
+                                       "Two-year (public and private not-for-profit)",
+                                       "Two-year for-profit",
+                                       "Less than two-year schools of any type",
+                                       "Not in college between the ages of 19-22",
+                                       "Attending college with insufficient data")))
 
-# major (i.e. arts/humanities, stem, tradepersonal) percent
+# Convert major variables (i.e. % of students majoring in arts/humanities, stem, tradepersonal, etc.) into percentages
 table_10 <- table_10 %>% 
   mutate_at(vars(matches("pct_[A-Za-z]+_2000")) ,
             funs(. / 100))
 ```
 
-check differences in n
+## differences in p
+
+```{r}
+# Which vars are in table_10 but not table_2?
+setdiff(colnames(table_10), colnames(table_2))
+
+# Which vars are in table_2 but not table_10?
+setdiff(colnames(table_2), colnames(table_10))
+
+# want count, female, par_mean, par_median, par_rank, par1-toppt1pc from table_2
+```
+## differences in n
+```{r}
+# 2202 schools
+table_2 %>% 
+  select(super_opeid) %>% 
+  distinct() %>% 
+  nrow()
+
+# 2463 schools
+table_10 %>% 
+  select(super_opeid) %>% 
+  distinct() %>% 
+  nrow()
+```
+
+Since the number of schools is different in each, I will use an inner_join to get only the schools that appear in both datasets.
+
 # Create dataset for prediction
 ```{r}
 table_preds <- table_10 %>% 
-  left_join(table_2 %>% select(super_opeid, mr_kq5_pq1, mr_ktop1_pq1,
-                               count, female, 
-                               starts_with("par")), 
+  inner_join(table_2 %>% select(super_opeid, 
+                               mr_kq5_pq1, mr_ktop1_pq1,
+                               count, female, starts_with("par")), 
             by = "super_opeid") %>% 
+  # Remove variables that are too specific to a certain college (i.e. name or location)
+  # Remove variables that are redundant (i.e. tier)
+  # Remove variables that are too related to dependent variable (i.e. parental vars, median earnings)
   select(-super_opeid, -name, 
          -fips, -cz, -czname, -cfips, -county, -state, -zip, -tier,
          -starts_with("par"),
          -scorecard_median_earnings_2011)
 ```
 
-
-## Missingness of y-var
+# Missingness 
+## In y
+y-vars: `mr_kq5_pq1` and `mr_ktop1_pq1`
 ```{r}
-mean(is.na(table_preds$mr_kq5_pq1))
+sum(is.na(table_preds$mr_kq5_pq1))
 sum(is.na(table_preds$mr_ktop1_pq1))
-# need to remove these
 ```
 
-```{r}
-dim(table_preds)
-dim(table_2)
-dim(table_10)
+No missing values in y.
 
-table_2 %>%
-  filter(is.na(mr_kq5_pq1)) %>% 
-  # filter(tier_name == "Other elite schools (public and private)")
-  count(tier_name)
-
-table_2 %>% 
-  filter(!is.na(mr_ktop1_pq1))
-```
-
-```{r}
-table_preds <- table_preds %>% 
-  filter(!is.na(mr_kq5_pq1))
-```
-
-# Regression
-## Top 20%
-```{r}
-summary(lm(mr_kq5_pq1 ~ . - mr_ktop1_pq1,
-           data = table_preds))
-# region_South, barrons, hbcu,
-#   ipeds_enrollment_2013, ipeds_enrollment_2000, 
-#   asian_or_pacific_share_fall_2000, black_share_fall_2000, hisp_share_fall_2000
-#   pct_arthuman_2000, pct_business_2000, pct_health_2000, pct_publicsocial_2000,
-#   pct_stem_2000, pct_socialscience_2000, pct_tradepersonal_2000, 
-#   adjmortmeas_chfall30day, cs00_seg_inc_pov25, poor_share, frac_middleclass,
-#   scap_ski90pcm, cs_frac_black, cs_frac_hisp, cs_labforce, pop_density, 
-#   frac_traveltime_lt15, hhinc00, taxrate
-```
-
-```{r}
-summary(lm(mr_ktop1_pq1 ~ . - mr_kq5_pq1,
-           data = table_preds))
-
-# SAT, poor share
-```
-
-Lasso: probably not necessary since coefficients not huge
-
-
-# Check missingness
+## In X
 ```{r}
 vars_w_missingness <- table_preds %>% 
   purrr::map_int(~ sum(is.na(.))) %>% 
@@ -129,8 +169,47 @@ vars_w_missingness <- table_preds %>%
   names()
 ```
 
+### Drop Rows
+Some variables are only missing for 15 schools: just drop these.
+My rule of thumb is: if < 1% of rows have missing values for a certain variable or group of variable, just drop those rows.  It's not worth imputing them or adding another column just for the sake of those few rows.
 
-## Add column to denote missingness
+Here, only 0.7% rows are missing for a major or race variable, which prove to be important variables.
+```{r}
+15 / nrow(table_preds)
+```
+
+```{r}
+table_preds <- table_preds %>%
+  filter((!is.na(pct_arthuman_2000) &
+          !is.na(pct_business_2000) &
+          !is.na(pct_health_2000) &
+          !is.na(pct_multidisci_2000) &
+          !is.na(pct_publicsocial_2000) &
+          !is.na(pct_stem_2000) &
+          !is.na(pct_socialscience_2000) &
+          !is.na(pct_tradepersonal_2000) &
+          !is.na(asian_or_pacific_share_fall_2000) &
+          !is.na(black_share_fall_2000) &
+          !is.na(hisp_share_fall_2000) &
+          !is.na(alien_share_fall_2000))
+         )
+```
+
+```{r}
+dim(table_preds) # 2184 schools
+```
+
+```{r}
+# need to run again now that some variables are no longer missing
+vars_w_missingness <- table_preds %>% 
+  purrr::map_int(~ sum(is.na(.))) %>% 
+  .[. != 0] %>% 
+  names()
+```
+
+
+### Add column to denote missingness
+This is one of several options to remedy missingness.  Essentially I add an _NA column to denote missingness (1/0) and fill in all missing values with -1 in the original column.  This way, no information is lost, and if missingness on that one variable is important, it will be included in the model.
 ```{r}
 add_missing_col <- function(df, var) {
   # Add 1/0 col
@@ -150,226 +229,37 @@ for (var in vars_w_missingness) {
 }
 ```
 
-## Check function
+#### Check function
 ```{r}
 dim(table_preds)
 table_preds %>% 
   select(ends_with("_NA"))
 ```
 
-## Are these variables missing completely at random? 
+# Final Checks
+No missing values.
 ```{r}
-table_preds_NA <- table_preds
-table_preds_NA[table_preds_NA == -1] <- NA
-```
-
-### t-test
-```{r}
-t.test(table_preds_NA %>% filter(ipeds_enrollment_2000_NA == 1) %>% .$asian_or_pacific_share_fall_2000,
-       table_preds_NA %>% filter(ipeds_enrollment_2000_NA == 0) %>% .$asian_or_pacific_share_fall_2000)
-
-sum(is.na(table_preds_NA %>% filter(ipeds_enrollment_2000_NA == 1) %>% .$asian_or_pacific_share_fall_2000))
+table_preds %>%
+  map_int(~sum(is.na(.))) %>% 
+  .[. != 0]
 ```
 
 ```{r}
-t.test(table_preds_NA %>% filter(sat_avg_2013_NA == 1) %>% .$exp_instr_pc_2000,
-       table_preds_NA %>% filter(sat_avg_2013_NA == 0) %>% .$exp_instr_pc_2000)
-
-sum(!is.na(table_preds_NA %>% filter(sat_avg_2013_NA == 1) %>% .$exp_instr_pc_2000))
+sapply(table_preds, typeof) %>% table()
 ```
 
-```{r}
-table_preds_NA %>% select(one_of(vars_w_missingness)) %>% 
-  purrr::map_int(~ sum(is.na(.)))
-```
+# Exploratory Data Analysis
+I examine the distribution of some variables of interest to me: 
 
-### chi-square test
-```{r}
-chisq.test(table_preds_NA$sat_avg_2013_NA,
-           table_preds_NA$tier_name)
-
-table_preds_NA %>% 
-  group_by(tier_name) %>% 
-  summarize(sat_avg_2013_NA = mean(sat_avg_2013_NA),
-            n = n()) %>% 
-  arrange(desc(sat_avg_2013_NA))
-```
-
-```{r}
-missing_chisq <- tibble()
-for (var in vars_w_missingness) {
-  missing_chisq <- bind_rows(
-    missing_chisq,
-    tibble(
-      variable = var,
-      p = chisq.test(table_preds_NA[var] %>% .[[1]],
-                     table_preds_NA$tier_name)$`p.value`
-      ))
-}
-
-missing_chisq %>% 
-  arrange(p)
-
-# SAT, Sticker Price, Avg Fac Salary
-```
-
-# Dummy-coded version
-```{r}
-table_preds_binary <- model.matrix(~., data = table_preds %>% select(-mr_kq5_pq1, -mr_ktop1_pq1))
-```
-
-```{r}
-# Normalize all vars
-table_preds_binary %>% 
-  as_tibble() %>% 
-  purrr::map_dbl(~max(.)) %>% 
-  .[. > 1]
-
-table_preds_binary <- table_preds_binary %>% 
-  as_tibble() %>% 
-  mutate_if(function(x) max(x) > 1, funs(percent_rank(.))) %>% 
-  as.matrix()
-```
-
-
-# Elastic net: probably correlated factors
-## Top 20%
-```{r}
-a <- seq(0, 0.9, 0.05)
-search <- foreach(i = a, .combine = rbind) %dopar% {
-  cv <- cv.glmnet(y = table_preds$mr_kq5_pq1,
-          x = table_preds_binary,
-          nfold = 10, type.measure = "deviance", parallel = TRUE, alpha = i)
-  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], lambda.1se = cv$lambda.1se, alpha = i)
-}
-cv3 <- search[search$cvm == min(search$cvm), ]
-md3 <- glmnet(y = table_preds$mr_kq5_pq1,
-              x = table_preds_binary,
-              lambda = cv3$lambda.1se, alpha = cv3$alpha)
-cv3$alpha
-coef(md3)
-
-tibble(
-  name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
-  beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
-) %>% 
-  slice(1:15)
-
-# Top 10 coefficients
-# taxrate, lf_d_2000_1980, asian_or_pacific_share_fall_2000, poor_share,
-#   female_NA, cs_fam_wkids_singlemom, cs_born_foreign, female, hisp_share_fall_2000
-```
-
-## Top 1%
-```{r}
-a <- seq(0, 0.9, 0.05)
-search <- foreach(i = a, .combine = rbind) %dopar% {
-  cv <- cv.glmnet(y = table_preds$mr_ktop1_pq1,
-          x = table_preds_binary,
-          nfold = 10, type.measure = "deviance", parallel = TRUE, alpha = i)
-  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], lambda.1se = cv$lambda.1se, alpha = i)
-}
-cv3 <- search[search$cvm == min(search$cvm), ]
-md3 <- glmnet(y = table_preds$mr_ktop1_pq1,
-              x = table_preds_binary,
-              lambda = cv3$lambda.1se, alpha = cv3$alpha)
-cv3$alpha
-coef(md3)
-
-tibble(
-  name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
-  beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
-)
-
-# tiername_IvyPlus, asian_or_pacific_share_fall_2000, poor_share, par_top1pc, tierOtherElite,
-#   par_top5pc, cs_born_foreign, par_toppt1pc, inc_share_1perc, cs_elf_ind_man
-```
-
-# Evaluate visually
-## Tier
-### MR 20%
-```{r}
-table_2 %>%
-  group_by(tier_name) %>% 
-  summarize(percent_par_q1 = mean(par_q1),
-            `% Parental bttm 20%, Kids top 20%` = mean(mr_kq5_pq1)) %>% 
-  mutate(`% Parental bttm 20%, Kids bttm 80%` = percent_par_q1 - 
-           `% Parental bttm 20%, Kids top 20%`) %>% 
-  select(-percent_par_q1) %>% 
-  mutate(tier_name = factor(tier_name,
-                            levels = c("Ivy Plus", 
-                                       "Other elite schools (public and private)",
-                                       "Highly selective private",
-                                       "Highly selective public",
-                                       "Selective private",
-                                       "Selective public",
-                                       "Nonselective four-year private not-for-profit",
-                                       "Nonselective four-year public",
-                                       "Four-year for-profit",
-                                       "Two-year (public and private not-for-profit)",
-                                       "Two-year for-profit",
-                                       "Less than two-year schools of any type",
-                                       "Not in college between the ages of 19-22",
-                                       "Attending college with insufficient data"))) %>% 
-  gather(key = "metric", value = "percent", starts_with("%")) %>% 
-  ggplot(aes(tier_name, percent, fill = metric)) +
-  geom_col() +
-  theme(axis.text.x = element_text(angle = 90),
-        text = element_text(size = 16)) +
-  labs(x = "Tier",
-       y = "% Parental Income in bottom 20%",
-       fill = NULL,
-       title = "A visual representation of MR 20% by Tier") +
-  scale_y_continuous(labels = scales::percent)
-
-# ggsave("/Users/lisaannyu/GitHub/college_mobility/www/mr_20.png",
-#        width = 16, height = 9)
-```
-
-### MR 1%
-```{r}
-table_2 %>%
-  group_by(tier_name) %>% 
-  summarize(percent_par_q1 = mean(par_q1),
-            `% Parental bttm 20%, Kids top 1%` = mean(mr_ktop1_pq1)) %>% 
-  mutate(`% Parental bttm 20%, Kids bttm 99%` = percent_par_q1 - 
-           `% Parental bttm 20%, Kids top 1%`) %>% 
-  select(-percent_par_q1) %>% 
-  mutate(tier_name = factor(tier_name,
-                            levels = c("Ivy Plus", 
-                                       "Other elite schools (public and private)",
-                                       "Highly selective private",
-                                       "Highly selective public",
-                                       "Selective private",
-                                       "Selective public",
-                                       "Nonselective four-year private not-for-profit",
-                                       "Nonselective four-year public",
-                                       "Four-year for-profit",
-                                       "Two-year (public and private not-for-profit)",
-                                       "Two-year for-profit",
-                                       "Less than two-year schools of any type",
-                                       "Not in college between the ages of 19-22",
-                                       "Attending college with insufficient data"))) %>% 
-  gather(key = "metric", value = "percent", starts_with("%")) %>% 
-  ggplot(aes(tier_name, percent, fill = metric)) +
-  geom_col() +
-  theme(axis.text.x = element_text(angle = 90),
-        text = element_text(size = 16)) +
-  labs(x = "Tier",
-       y = "% Parental Income in bottom 20%",
-       fill = NULL,
-       title = "A visual representation of MR 1% by Tier") +
-  scale_y_continuous(labels = scales::percent)
-
-# ggsave("/Users/lisaannyu/GitHub/college_mobility/www/mr_1.png",
-#        width = 16, height = 9)
-```
+* major
+* STEM by tier
+* race
+* race by tier
 
 ## Share by major
-Need to add more majors
+Baseline percentages
 ```{r}
 table_10 %>%
-  filter(name == "Stanford University") %>% 
   select(matches("pct_[A-Za-z]+_2000")) %>% 
   gather(key = "major", value = "percent") %>% 
   mutate(major = factor(major,
@@ -390,12 +280,12 @@ table_10 %>%
                                   "STEM",
                                   "Social Science",
                                   "Trades & Personal Services"))) %>%
-  mutate(percent = percent / 100# ,
-         # major = reorder(major, desc(percent))
-         ) %>% 
+  group_by(major) %>% 
+  summarize(percent = mean(percent, na.rm = TRUE)) %>% 
+  mutate(major = reorder(major, desc(percent))) %>%
   ggplot(aes(major, percent)) +
   geom_col() +
-  geom_text(aes(label = scales::percent(round(percent, 2))),
+  geom_text(aes(label = scales::percent(x = percent, accuracy = 1)),
             vjust = -0.5) +
   scale_y_continuous(labels = scales::percent) +
   theme(axis.text.x = element_text(angle = 90),
@@ -406,6 +296,461 @@ table_10 %>%
 ```
 
 ```{r}
-table_10$pct_arthuman_2000
+# Note: this does not take into account the size of the school.  Basically, this number represents the average share of STEM majors across all schools NOT the percent of STEM majors across all students
+STEM_baseline <- mean(table_10$pct_stem_2000, na.rm = TRUE)
 ```
 
+## Tier by STEM
+Because there are such differing numbers of schools per tier, I am using size to denote the number of schools per tier.
+```{r}
+table_10 %>%
+  select(tier_name, pct_stem_2000) %>% 
+  group_by(tier_name) %>% 
+  summarize(pct_stem_2000 = mean(pct_stem_2000, na.rm = TRUE),
+            n = n()) %>% 
+  ggplot(aes(tier_name, pct_stem_2000)) +
+  geom_point(aes(size = n)) +
+  geom_text(aes(label = scales::percent(x = pct_stem_2000, accuracy = 1)),
+            vjust = -1) +
+  geom_hline(yintercept = STEM_baseline, lty = 2) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.4)) +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
+  labs(x = "Tier",
+       y = "Percent STEM in 2000",
+       title = "Share in STEM in 2000",
+       subtitle = "Ivy Plus and Highly Selective Public schools have high shares of STEM majors, relative to baseline (14%)")
+```
+
+## Share by Race
+```{r}
+table_10 %>%
+  select(ends_with("share_fall_2000")) %>% 
+  gather(key = "race", value = "percent") %>% 
+  mutate(race = factor(race,
+                       levels = c("asian_or_pacific_share_fall_2000",
+                                  "black_share_fall_2000",
+                                  "hisp_share_fall_2000",
+                                  "alien_share_fall_2000"),
+                       labels = c("Asian/PI",
+                                  "Black",
+                                  "Hispanic",
+                                  "Alien"))) %>% 
+  group_by(race) %>% 
+  summarize(percent = mean(percent, na.rm = TRUE)) %>% 
+  mutate(race = reorder(race, desc(percent))) %>%
+  ggplot(aes(race, percent)) +
+  geom_col() +
+  geom_text(aes(label = scales::percent(round(percent, 3))),
+            vjust = -0.5) +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
+  labs(x = "Race (2000)",
+       y = "Percent",
+       title = "Share in Each Race in 2000")
+```
+
+## Race by Tier
+```{r}
+table_10 %>%
+  select(tier_name, ends_with("share_fall_2000")) %>% 
+  gather(key = "race", value = "percent", -tier_name) %>% 
+  mutate(race = factor(race,
+                       levels = c("asian_or_pacific_share_fall_2000",
+                                  "black_share_fall_2000",
+                                  "hisp_share_fall_2000",
+                                  "alien_share_fall_2000"),
+                       labels = c("Asian/PI",
+                                  "Black",
+                                  "Hispanic",
+                                  "Alien"))) %>% 
+  group_by(tier_name, race) %>% 
+  summarize(percent = mean(percent, na.rm = TRUE),
+            n = n()) %>% 
+  ggplot(aes(race, percent)) +
+  geom_point(aes(size = n)) +
+  facet_wrap(~ tier_name, nrow = 2, dir = "v", labeller = label_wrap_gen()) +
+  geom_text(aes(label = scales::percent(percent, accuracy = 1)),
+            vjust = -1) +
+  scale_y_continuous(labels = scales::percent,
+                     limits = c(0, 0.25)) +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
+  labs(x = "Race (2000)",
+       y = "Percent",
+       title = "Share in Each Race by Tier in 2000")
+```
+
+# Modeling
+
+Idea: 4 approaches:
+
+1. Remove vars to model one at a time and see how it affects adjusted R^2
+2. Random Forest variable importance (technically incorrect b/c does not taken into account other variables)
+3. Linear Regression (technically not a good idea to identify most important variables on the basis of significance because with this sample size, statistical significance is not difficult to achieve)
+4. Linear Regression with elastic net regularization: check coefficient size
+
+# Approach 1: R^2
+Idea: See how the adjusted R^2 changes when a variable is removed from the model.  Theoretically, the adjusted R^2 could fall (i.e. model is better with this variable) or rise (i.e. model is worse with this model).
+
+```{r}
+vars_to_test <- colnames(table_preds %>% select(-mr_kq5_pq1, -mr_ktop1_pq1))
+```
+
+```{r}
+get_drop_in_R2 <- function(var, mr_var) {
+  if (mr_var == "mr_kq5_pq1") {
+    f <- paste0("mr_kq5_pq1 ~ . - mr_ktop1_pq1 - ", var)
+  } else if (mr_var == "mr_ktop1_pq1") {
+    f <- paste0("mr_ktop1_pq1 ~ . - mr_kq5_pq1 - ", var)
+  } else {
+    print("Error: `mr_var` should be 'mr_kq5_pq1' or 'mr_ktop1_pq1'")
+    return(NULL)
+  }
+  
+  fit_lm <- lm(formula(f),
+           data = table_preds)
+  
+  if (mr_var == "mr_kq5_pq1") {
+    return(baseline_R2_top20 - summary(fit_lm)$adj.r.squared)
+  } else if (mr_var == "mr_ktop1_pq1") {
+    return(baseline_R2_top1 - summary(fit_lm)$adj.r.squared)
+  }
+}
+```
+
+```{r}
+get_drop_in_R2_all <- function(mr_var) {
+  # Set up vector full of NAs to store R2 drops
+  var_R2_effect <- rep(NA, length(vars_to_test))
+  names(var_R2_effect) <- vars_to_test
+  
+  # Call function to get drop in R2 for each variable
+  for (var_name in vars_to_test) {
+    var_R2_effect[var_name] <- get_drop_in_R2(var_name, mr_var)
+  }
+  return(var_R2_effect %>% sort(decreasing = TRUE))
+}
+```
+
+## Top 20%
+```{r}
+fit_lm_top20 <- lm(mr_kq5_pq1 ~ . - mr_ktop1_pq1,
+           data = table_preds)
+baseline_R2_top20 <- summary(fit_lm_top20)$adj.r.squared # Adjusted R^2: 0.5427
+```
+
+```{r}
+get_drop_in_R2_all("mr_kq5_pq1")[1:10]
+# Top vars: hisp_share_fall_2000, asian_or_pacific_share_fall_2000, region, black_share_fall_2000, female, barrons
+```
+
+
+## Top 1%
+```{r}
+fit_lm_top1 <- lm(mr_ktop1_pq1 ~ . - mr_kq5_pq1,
+           data = table_preds)
+baseline_R2_top1 <- summary(fit_lm_top1)$adj.r.squared # Adjusted R^2: 0.3615
+```
+
+```{r}
+get_drop_in_R2_all("mr_ktop1_pq1")[1:10]
+
+# Most important variables: asian_or_pacific_share_fall_2000, tier_name, scorecard_rej_rate_2013, region, sat_avg_2013
+```
+
+
+# Approach 2: Random Forest
+
+```{r}
+model_rf_top20 <- randomForest(mr_kq5_pq1 ~ . - mr_ktop1_pq1,
+           data = table_preds)
+```
+
+```{r}
+varImpPlot(model_rf_top20)
+# Most important variables: hisp_share_fall_2000, asian_or_pacific_share_fall_2000, black_share_fall_2000, female, region, tier_name
+```
+
+```{r}
+model_rf_top1 <- randomForest(mr_ktop1_pq1 ~ . - mr_kq5_pq1,
+           data = table_preds)
+```
+
+```{r}
+varImpPlot(model_rf_top1)
+# Most important variables: sat_avg_2013, avg_facsal_2001,  asian_or_pacific_share_fall_2000, avg_facsal_2013, scorecard_rej_rate_2013, exp_instr_pc_2000
+```
+
+
+# Approach 3: Regression
+## Top 20%
+```{r}
+fit_lm_top20 <- lm(mr_kq5_pq1 ~ . - mr_ktop1_pq1, data = table_preds)
+summary(fit_lm_top20) # Adjusted R^2: 0.5427
+```
+
+```{r}
+dim(coef(summary(fit_lm_top20))) # 69 vars
+
+sig_lm_top20 <- coef(summary(fit_lm_top20))[
+  coef(summary(fit_lm_top20))[ , "Pr(>|t|)"] < 0.05, 
+                            c("Pr(>|t|)")] %>% sort()
+length(sig_lm_top20) # 25 vars
+
+# Most important: hisp_share_fall_2000, asian_or_pacific_share_fall_2000, regionMidwest, black_share_fall_2000, regionWest, female
+```
+
+## Top 1%
+```{r}
+fit_lm_top1 <- lm(mr_ktop1_pq1 ~ . - mr_kq5_pq1,
+                  data = table_preds)
+summary(fit_lm_top1)
+
+# Adjusted R^2: 0.3615
+```
+
+```{r}
+dim(coef(summary(fit_lm_top1))) # 69 vars
+
+sig_lm_top1 <- coef(summary(fit_lm_top1))[
+  coef(summary(fit_lm_top1))[ , "Pr(>|t|)"] < 0.05, 
+                            c("Pr(>|t|)")] %>% sort()
+
+length(sig_lm_top1) # 13
+
+# Most important: asian_or_pacific_share_fall_2000, scorecard_rej_rate_2013, sat_avg_2013,  exp_instr_pc_2000, hisp_share_fall_2000, 
+```
+
+Would like to use some sort of regularization because lots of coefficients and R^2 somewhat low.
+
+# Approach 4: Elastic Net
+I am using an elastic net becauase there are probably highly correlated factors (e.g. tier and rejection rate), which lends well to ridge regression, and because I may want to entirely drop variables, which lends well to lasso regression.
+
+I will conduct a grid search to find the optimal alpha.
+
+## Preprocessing: Dummy-coded version
+```{r}
+table_preds_binary <- model.matrix(~., 
+                                   data = table_preds %>% 
+                                     select(-mr_kq5_pq1, -mr_ktop1_pq1))
+```
+
+```{r}
+# Normalize all vars
+table_preds_binary %>% 
+  as_tibble() %>% 
+  purrr::map_dbl(~max(.)) %>% 
+  .[. > 1]
+
+table_preds_binary <- table_preds_binary %>% 
+  as_tibble() %>% 
+  mutate_if(function(x) max(x) > 1, funs(percent_rank(.))) %>% 
+  as.matrix()
+```
+
+## Top 20%
+```{r}
+a <- seq(0, 0.9, 0.05)
+search <- foreach(i = a, .combine = rbind) %dopar% {
+  cv <- cv.glmnet(y = table_preds$mr_kq5_pq1,
+          x = table_preds_binary,
+          nfold = 10, type.measure = "deviance", parallel = TRUE, alpha = i)
+  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], 
+             lambda.1se = cv$lambda.1se, alpha = i)
+}
+cv3 <- search[search$cvm == min(search$cvm), ]
+md3 <- glmnet(y = table_preds$mr_kq5_pq1,
+              x = table_preds_binary,
+              lambda = cv3$lambda.1se, alpha = cv3$alpha)
+cv3$alpha
+coef(md3)
+
+tibble(
+  name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
+  beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
+) %>% 
+  slice(1:15)
+
+# Top coefficients
+# asian_or_pacific_share_fall_2000, hisp_share_fall_2000, black_share_fall_2000, alien_share_fall_2000, female
+```
+
+## Top 1%
+```{r}
+a <- seq(0, 0.9, 0.05)
+search <- foreach(i = a, .combine = rbind) %dopar% {
+  cv <- cv.glmnet(y = table_preds$mr_ktop1_pq1,
+          x = table_preds_binary,
+          nfold = 10, type.measure = "deviance", parallel = TRUE, alpha = i)
+  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], 
+             lambda.1se = cv$lambda.1se, 
+             alpha = i)
+}
+cv3 <- search[search$cvm == min(search$cvm), ]
+md3 <- glmnet(y = table_preds$mr_ktop1_pq1,
+              x = table_preds_binary,
+              lambda = cv3$lambda.1se, alpha = cv3$alpha)
+cv3$alpha
+coef(md3)
+
+tibble(
+  name = rownames(coef(md3))[order(abs(coef(md3)), decreasing = TRUE)],
+  beta = coef(md3)[order(abs(coef(md3)), decreasing = TRUE)]
+)
+
+# Top coefficients: asian_or_pacific_share_fall_2000, alien_share_fall_2000, tier_nameOther elite schools (public and private), pct_stem_2000, barrons.L, pct_stem_2000, exp_instr_pc_2013 
+```
+
+# Evaluate visually
+## Tier: Entire Bottom 20%
+Goal: Look at the entire bottom 20% and examine the ratio between those who reached the top x% and those who did not, by tier
+
+### MR 20%
+```{r}
+table_2 %>%
+  group_by(tier_name) %>% 
+  summarize(percent_par_q1 = mean(par_q1),
+            `% Parental bttm 20%, Kids top 20%` = mean(mr_kq5_pq1)) %>% 
+  mutate(`% Parental bttm 20%, Kids bttm 80%` = percent_par_q1 - 
+           `% Parental bttm 20%, Kids top 20%`) %>% 
+  select(-percent_par_q1) %>% 
+  gather(key = "metric", value = "percent", starts_with("%")) %>% 
+  ggplot(aes(tier_name, percent, fill = metric)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
+  labs(x = "Tier",
+       y = "% Parental Income in bottom 20%",
+       fill = NULL,
+       title = "A visual representation of MR 20% by Tier",
+       subtitle = "In top 4 tiers, nearly half the students in bttm 20% reach the top 20%") +
+  scale_y_continuous(labels = scales::percent)
+
+# ggsave("/Users/lisaannyu/GitHub/college_mobility/www/mr_20.png",
+#        width = 16, height = 9)
+```
+
+### MR 1%
+```{r}
+table_2 %>%
+  group_by(tier_name) %>% 
+  summarize(percent_par_q1 = mean(par_q1),
+            `% Parental bttm 20%, Kids top 1%` = mean(mr_ktop1_pq1)) %>% 
+  mutate(`% Parental bttm 20%, Kids bttm 99%` = percent_par_q1 - 
+           `% Parental bttm 20%, Kids top 1%`) %>% 
+  select(-percent_par_q1) %>% 
+  gather(key = "metric", value = "percent", starts_with("%")) %>% 
+  ggplot(aes(tier_name, percent, fill = metric)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90),
+        text = element_text(size = 16)) +
+  labs(x = "Tier",
+       y = "% Parental Income in bottom 20%",
+       fill = NULL,
+       title = "A visual representation of MR 1% by Tier",
+       subtitle = "Ivy Plus the only tier where a sizeable chunk of students in bttm 20% reach top 1%") +
+  scale_y_continuous(labels = scales::percent)
+
+# ggsave("/Users/lisaannyu/GitHub/college_mobility/www/mr_1.png",
+#        width = 16, height = 9)
+```
+
+## By Tier
+```{r}
+table_2 %>%
+  group_by(tier_name) %>% 
+  summarize(mr_kq5_pq1 = mean(mr_kq5_pq1),
+            mr_ktop1_pq1 = mean(mr_ktop1_pq1),
+            n = n()) %>% 
+  gather(key = "MR", value = "percent", -tier_name, -n) %>% 
+  ggplot(aes(tier_name, percent, size = n)) +
+  geom_point() +
+  facet_wrap(~ MR, nrow = 2, scales = "free_y") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(x = "Tier",
+       y = "Percent Students",
+       title = "Mobility Rate by Tier",
+       subtitle = "Highy Selective Public schools are good at moving students to top 20%, but Ivy Plus schools are good at moving students to top 1%")
+```
+
+## By Region
+```{r}
+table_preds %>% 
+  select(mr_kq5_pq1, mr_ktop1_pq1, region) %>% 
+  group_by(region) %>% 
+  summarize(mr_kq5_pq1 = mean(mr_kq5_pq1),
+            mr_ktop1_pq1 = mean(mr_ktop1_pq1)) %>% 
+  gather(key = "mr", value = "percent", -region) %>% 
+  ggplot(aes(region, percent)) +
+  geom_col() +
+  facet_wrap(~ mr, scales = "free_y") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Region",
+       y = "Percent",
+       title = "Mobility Rate per Region",
+       subtitle = "Mideast and West have higher mobility rates, especially for Top 1%")
+```
+
+## By STEM
+
+```{r}
+table_preds %>%
+  select(mr_kq5_pq1, mr_ktop1_pq1, pct_stem_2000) %>% 
+  gather(key = "MR", value = "percent", -pct_stem_2000) %>% 
+  ggplot(aes(pct_stem_2000, percent)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap(~ MR, scales = "free_y")
+```
+
+## By Female
+```{r}
+table_preds %>%
+  select(mr_kq5_pq1, mr_ktop1_pq1, female) %>% 
+  gather(key = "MR", value = "percent", -female) %>% 
+  ggplot(aes(female, percent)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap(~ MR, scales = "free_y") +
+  scale_x_continuous(limits = c(0, 1))
+```
+
+## By % Asian
+```{r}
+table_preds %>%
+  select(mr_kq5_pq1, mr_ktop1_pq1, asian_or_pacific_share_fall_2000) %>% 
+  gather(key = "MR", value = "percent", -asian_or_pacific_share_fall_2000) %>% 
+  ggplot(aes(asian_or_pacific_share_fall_2000, percent)) +
+  geom_point(alpha = 0.1) +
+  facet_wrap(~ MR, scales = "free_y") +
+  scale_x_continuous(limits = c(0, 1))
+```
+
+# Summary
+Most important variables:
+
+For both versions of MR:
+* Race
+* Major
+* region
+
+Especially for MR Top 1%:
+* tier/difficulty of getting in (i.e. tier_name, barrons, scorecard_rejection)
+* amount spent per student
+
+# Next Steps
+
+Data Level:
+* Check for missingness at random
+* Investigate: do schools with a high share of Asians also have a high share of blacks and hispanics?  In other words, are diverse schools diverse across all races available, or do they only have one predominant non-Caucasian race?
+
+Model Level:
+* Consider adding logs, interactions
+* How to evalute this model?
+    * R^2
+    * F-statistic
+    * Test set -> SSE?
+
+Recommendations/Takehome Message:
+* Which variables are changeable and which are not?  What recommendation would I give to universities?

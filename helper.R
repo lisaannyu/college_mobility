@@ -2,12 +2,15 @@ library(tidyverse)
 library(shiny)
 library(shinydashboard)
 
+# Set Seed
+set.seed(123)
+
 # Parameters
 # Table 1: Baaseline Cross-Sectional Estimates by College
-table_2_file_path <- 
+table_2_file_path <-
   "http://www.equality-of-opportunity.org/data/college/mrc_table2.dta"
 
-table_2 <- haven::read_dta(table_2_file_path) %>% 
+table_2 <- haven::read_dta(table_2_file_path) %>%
   arrange(name)
 
 # Table 10: College-level Characteristics
@@ -15,8 +18,15 @@ table_10_file_path <-
   "https://github.com/lisaannyu/college_mobility/raw/master/mrc_table10.csv"
   # "/Users/lisaannyu/GitHub/college_mobility/mrc_table10.csv"
 
-table_10 <- read_csv(table_10_file_path) %>% 
+table_10 <- read_csv(table_10_file_path) %>%
   arrange(name)
+
+# # If offline, change paths to:
+# table_2_file_path <- "/Users/lisaannyu/Documents/Berkeley/Guest Lecture for Yang/data/mrc_table2.csv"
+# table_2 <- read_csv(table_2_file_path)
+# 
+# table_10_file_path <- "/Users/lisaannyu/Documents/Berkeley/Guest Lecture for Yang/data/mrc_table10.csv"
+# table_10 <- read_csv(table_10_file_path)
 
 # Add some college-level characteristics to table_2
 table_2 <- table_2 %>%
